@@ -1,0 +1,163 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: "Profiler \xE2\u20AC\u201D Lambda Functions Deploys all 4 handlers: createPatient,\
+  \ getPatient, getRecord, createRecord. Function names follow the convention: {AppName}-{lambdaName}-{Stage}\
+  \ Sources of truth: lambdaMap.json (names/paths), .env (AppName, table names, Redis)\n"
+Parameters:
+  Stage:
+    Type: String
+    Default: prod
+    AllowedValues:
+    - dev
+    - prod
+  AppName:
+    Type: String
+    Description: Application name prefix (APP_NAME from .env)
+  RedisUrl:
+    Type: String
+    Description: "Redis Cloud connection URL (from Redis Cloud dashboard \xE2\u2020\
+      \u2019 Connect \xE2\u2020\u2019 ioredis). Format: rediss://:<password>@<host>:<port>\n"
+    NoEcho: true
+  PatientTable:
+    Type: String
+    Description: DynamoDB patientDB table name (from dynamodb-stack outputs)
+  RecordsTable:
+    Type: String
+    Description: DynamoDB medicalrecordDB table name (from dynamodb-stack outputs)
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Architectures:
+    - x86_64
+    Timeout: 10
+    MemorySize: 256
+    Environment:
+      Variables:
+        PATIENT_TABLE:
+          Ref: PatientTable
+        RECORDS_TABLE:
+          Ref: RecordsTable
+        REDIS_URL:
+          Ref: RedisUrl
+Resources:
+  CreatePatientFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AppName}-createPatient-${Stage}
+      Handler: createPatient.handler
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName:
+            Ref: PatientTable
+      CodeUri: s3://profiler-cdk-bucket/55abfe72b6a3b7f74a077fb757c96489
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Format: cjs
+        EntryPoints:
+        - src/lambdas/createPatient.ts
+      SamResourceId: CreatePatientFunction
+  GetPatientFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AppName}-getPatient-${Stage}
+      Handler: getPatient.handler
+      Policies:
+      - DynamoDBReadPolicy:
+          TableName:
+            Ref: PatientTable
+      CodeUri: s3://profiler-cdk-bucket/55abfe72b6a3b7f74a077fb757c96489
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Format: cjs
+        EntryPoints:
+        - src/lambdas/getPatient.ts
+      SamResourceId: GetPatientFunction
+  GetRecordFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AppName}-getRecord-${Stage}
+      Handler: getRecords.handler
+      Policies:
+      - DynamoDBReadPolicy:
+          TableName:
+            Ref: RecordsTable
+      CodeUri: s3://profiler-cdk-bucket/55abfe72b6a3b7f74a077fb757c96489
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Format: cjs
+        EntryPoints:
+        - src/lambdas/getRecords.ts
+      SamResourceId: GetRecordFunction
+  CreateRecordFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName:
+        Fn::Sub: ${AppName}-createRecord-${Stage}
+      Handler: createRecord.handler
+      Policies:
+      - DynamoDBReadPolicy:
+          TableName:
+            Ref: PatientTable
+      - DynamoDBCrudPolicy:
+          TableName:
+            Ref: RecordsTable
+      CodeUri: s3://profiler-cdk-bucket/55abfe72b6a3b7f74a077fb757c96489
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Format: cjs
+        EntryPoints:
+        - src/lambdas/createRecord.ts
+      SamResourceId: CreateRecordFunction
+Outputs:
+  CreatePatientFunctionArn:
+    Description: "ARN \xE2\u20AC\u201D link to POST /patient in API Gateway"
+    Value:
+      Fn::GetAtt:
+      - CreatePatientFunction
+      - Arn
+    Export:
+      Name:
+        Fn::Sub: ${AppName}-CreatePatientFunctionArn-${Stage}
+  GetPatientFunctionArn:
+    Description: "ARN \xE2\u20AC\u201D link to GET /patient/{shn} in API Gateway"
+    Value:
+      Fn::GetAtt:
+      - GetPatientFunction
+      - Arn
+    Export:
+      Name:
+        Fn::Sub: ${AppName}-GetPatientFunctionArn-${Stage}
+  GetRecordFunctionArn:
+    Description: "ARN \xE2\u20AC\u201D link to GET /patient/{shn}/records in API Gateway"
+    Value:
+      Fn::GetAtt:
+      - GetRecordFunction
+      - Arn
+    Export:
+      Name:
+        Fn::Sub: ${AppName}-GetRecordFunctionArn-${Stage}
+  CreateRecordFunctionArn:
+    Description: "ARN \xE2\u20AC\u201D link to POST /patient/{shn}/records in API\
+      \ Gateway"
+    Value:
+      Fn::GetAtt:
+      - CreateRecordFunction
+      - Arn
+    Export:
+      Name:
+        Fn::Sub: ${AppName}-CreateRecordFunctionArn-${Stage}

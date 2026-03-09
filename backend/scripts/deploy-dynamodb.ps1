@@ -40,12 +40,14 @@ foreach ($key in $EnvVars.Keys) {
     $resolved[$key] = $val
 }
 
-$AppName   = $resolved["APP_NAME"]
-$Region    = if ($resolved["AWS_REGION"]) { $resolved["AWS_REGION"] } else { "us-east-1" }
-$StackName = "$AppName-dynamodb-$Stage"
-$Template  = Join-Path $BackendRoot "templates\dynamodb-stack.yaml"
+$AppName    = $resolved["APP_NAME"]
+$Region     = if ($resolved["AWS_REGION"]) { $resolved["AWS_REGION"] } else { "us-east-1" }
+$AwsProfile = $resolved["AWS_PROFILE"]
+$StackName  = "$AppName-dynamodb-$Stage"
+$Template   = Join-Path $BackendRoot "templates\dynamodb-stack.yaml"
 
 if (-not $AppName) { Write-Error "APP_NAME is not set in .env."; exit 1 }
+if (-not $AwsProfile) { Write-Error "AWS_PROFILE is not set in .env."; exit 1 }
 
 Write-Host ""
 Write-Host "==========================================" -ForegroundColor Cyan
@@ -60,6 +62,7 @@ aws cloudformation deploy `
     --template-file $Template `
     --stack-name $StackName `
     --region $Region `
+    --profile $AwsProfile `
     --parameter-overrides Stage=$Stage AppName=$AppName `
     --no-fail-on-empty-changeset
 
@@ -74,5 +77,6 @@ Write-Host "DynamoDB stack deployed successfully." -ForegroundColor Green
 aws cloudformation describe-stacks `
     --stack-name $StackName `
     --region $Region `
+    --profile $AwsProfile `
     --query "Stacks[0].Outputs[*].{Output:OutputKey,Value:OutputValue}" `
     --output table

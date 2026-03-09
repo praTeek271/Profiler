@@ -56,11 +56,13 @@ foreach ($key in $EnvVars.Keys) {
 # -----------------------------------------------------------------------
 $AppName      = $resolved["APP_NAME"]
 $Region       = if ($resolved["AWS_REGION"]) { $resolved["AWS_REGION"] } else { "us-east-1" }
+$AwsProfile   = $resolved["AWS_PROFILE"]
 $PatientTable = $resolved["PATIENT_TABLE"]
 $RecordsTable = $resolved["RECORDS_TABLE"]
 $RedisUrl     = $resolved["REDIS_URL"]
 
 if (-not $AppName) { Write-Error "APP_NAME is not set in .env."; exit 1 }
+if (-not $AwsProfile) { Write-Error "AWS_PROFILE is not set in .env."; exit 1 }
 if (-not $RedisUrl) { Write-Error "REDIS_URL is not set in .env. Get it from your Redis Cloud dashboard."; exit 1 }
 if (-not $PatientTable) { Write-Error "PATIENT_TABLE is not set in .env."; exit 1 }
 if (-not $RecordsTable) { Write-Error "RECORDS_TABLE is not set in .env."; exit 1 }
@@ -115,7 +117,7 @@ Write-Host ""
 Write-Host "[1/2] Building Lambda functions..." -ForegroundColor Yellow
 
 Push-Location $BackendRoot
-sam build --template-file $Template
+sam build --template-file $Template --base-dir $BackendRoot
 if ($LASTEXITCODE -ne 0) { Pop-Location; Write-Error "sam build failed."; exit 1 }
 Pop-Location
 
@@ -130,6 +132,7 @@ Write-Host "[2/2] Deploying to AWS ($Region)..." -ForegroundColor Yellow
 $Params = @(
     "--stack-name", $StackName,
     "--region", $Region,
+    "--profile", $AwsProfile,
     "--parameter-overrides",
         "Stage=$Stage",
         "AppName=$AppName",
@@ -140,8 +143,10 @@ $Params = @(
     "--no-confirm-changeset"
 )
 
+
 if ($Guided) {
-    sam deploy --guided @Params
+    # Only pass the template, region, and profile for guided mode; let user set all params interactively
+    sam deploy --guided --template-file .aws-sam/build/template.yaml --region $Region --profile $AwsProfile
 } else {
     sam deploy @Params
 }
@@ -159,5 +164,6 @@ Write-Host "Lambda ARNs (use these to wire to API Gateway):" -ForegroundColor Cy
 aws cloudformation describe-stacks `
     --stack-name $StackName `
     --region $Region `
+    --profile $AwsProfile `
     --query "Stacks[0].Outputs[*].{Output:OutputKey,ARN:OutputValue}" `
     --output table

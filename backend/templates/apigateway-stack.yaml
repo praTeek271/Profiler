@@ -1,10 +1,10 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >
-  Profiler — API Gateway REST API
+  Profiler - API Gateway REST API
   Defines all routes and wires them to the Lambda functions deployed by lambda-stack.
 
   NOTE: Import this file manually into AWS API Gateway console via:
-    API Gateway → Create API → REST API → Import → paste this file.
+    API Gateway -> Create API -> REST API -> Import -> paste this file.
   OR deploy this stack after lambda-stack to auto-create the API.
 
 Parameters:
@@ -43,7 +43,7 @@ Resources:
     Type: AWS::ApiGateway::ApiKey
     DependsOn: ProfilerApiDeployment
     Properties:
-      Name: !Sub "${AppName}-api-key"   # ← single key, no stage
+      Name: !Sub "${AppName}-api-key" # single key, no stage
       Enabled: true
 
   ProfilerUsagePlan:
@@ -91,7 +91,7 @@ Resources:
       PathPart: records
 
   # -------------------------------------------------------
-  # POST /patient → createPatient Lambda
+  # POST /patient -> createPatient Lambda
   # -------------------------------------------------------
   CreatePatientMethod:
     Type: AWS::ApiGateway::Method
@@ -120,7 +120,7 @@ Resources:
       SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ProfilerRestApi}/*/POST/patient"
 
   # -------------------------------------------------------
-  # GET /patient/{shn} → getPatient Lambda
+  # GET /patient/{shn} -> getPatient Lambda
   # -------------------------------------------------------
   GetPatientMethod:
     Type: AWS::ApiGateway::Method
@@ -146,7 +146,7 @@ Resources:
       SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ProfilerRestApi}/*/GET/patient/{shn}"
 
   # -------------------------------------------------------
-  # GET /patient/{shn}/records → getRecord Lambda
+  # GET /patient/{shn}/records -> getRecord Lambda
   # -------------------------------------------------------
   GetRecordsMethod:
     Type: AWS::ApiGateway::Method
@@ -172,7 +172,7 @@ Resources:
       SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ProfilerRestApi}/*/GET/patient/{shn}/records"
 
   # -------------------------------------------------------
-  # POST /patient/{shn}/records → createRecord Lambda
+  # POST /patient/{shn}/records -> createRecord Lambda
   # -------------------------------------------------------
   CreateRecordMethod:
     Type: AWS::ApiGateway::Method
@@ -232,7 +232,7 @@ Resources:
       ValidateRequestBody: true
       ValidateRequestParameters: false
 
-  # Model: CreatePatientRequest — mirrors openapi.yaml CreatePatientRequest schema
+  # Model: CreatePatientRequest - mirrors openapi.yaml CreatePatientRequest schema
   CreatePatientRequestModel:
     Type: AWS::ApiGateway::Model
     Properties:
@@ -255,7 +255,7 @@ Resources:
           phone:
             type: string
 
-  # Model: CreateRecordRequest — mirrors openapi.yaml CreateRecordRequest schema
+  # Model: CreateRecordRequest - mirrors openapi.yaml CreateRecordRequest schema
   CreateRecordRequestModel:
     Type: AWS::ApiGateway::Model
     Properties:
@@ -280,5 +280,5 @@ Outputs:
     Value: !Sub "https://${ProfilerRestApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}"
 
   ApiKeyId:
-    Description: API Key ID (retrieve value with: aws apigateway get-api-key --api-key <id> --include-value)
+    Description: "API Key ID (retrieve value with: aws apigateway get-api-key --api-key <id> --include-value)"
     Value: !Ref ProfilerApiKey

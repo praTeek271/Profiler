@@ -12,6 +12,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$env:PYTHONIOENCODING = "utf-8"   # Force AWS CLI stdout/stderr to UTF-8
+$env:PYTHONUTF8       = "1"        # Force UTF-8 for all Python file I/O (fixes charmap on Windows)
 $BackendRoot = Join-Path $PSScriptRoot ".."
 
 # -----------------------------------------------------------------------
@@ -42,11 +44,13 @@ foreach ($key in $EnvVars.Keys) {
 
 $AppName     = $resolved["APP_NAME"]
 $Region      = if ($resolved["AWS_REGION"]) { $resolved["AWS_REGION"] } else { "us-east-1" }
+$AwsProfile  = $resolved["AWS_PROFILE"]
 $LambdaStack = "$AppName-lambdas-$Stage"
 $StackName   = "$AppName-apigateway-$Stage"
 $Template    = Join-Path $BackendRoot "templates\apigateway-stack.yaml"
 
 if (-not $AppName) { Write-Error "APP_NAME is not set in .env."; exit 1 }
+if (-not $AwsProfile) { Write-Error "AWS_PROFILE is not set in .env."; exit 1 }
 
 Write-Host ""
 Write-Host "==========================================" -ForegroundColor Cyan
@@ -64,6 +68,7 @@ function Get-StackOutput([string]$stack, [string]$key) {
     $val = aws cloudformation describe-stacks `
         --stack-name $stack `
         --region $Region `
+        --profile $AwsProfile `
         --query "Stacks[0].Outputs[?OutputKey=='$key'].OutputValue" `
         --output text
     if (-not $val) {
@@ -86,6 +91,7 @@ aws cloudformation deploy `
     --template-file $Template `
     --stack-name $StackName `
     --region $Region `
+    --profile $AwsProfile `
     --parameter-overrides `
         Stage=$Stage `
         AppName=$AppName `
@@ -105,6 +111,7 @@ Write-Host ""
 aws cloudformation describe-stacks `
     --stack-name $StackName `
     --region $Region `
+    --profile $AwsProfile `
     --query "Stacks[0].Outputs[*].{Output:OutputKey,Value:OutputValue}" `
     --output table
 
@@ -112,11 +119,12 @@ aws cloudformation describe-stacks `
 $ApiKeyId = aws cloudformation describe-stacks `
     --stack-name $StackName `
     --region $Region `
+    --profile $AwsProfile `
     --query "Stacks[0].Outputs[?OutputKey=='ApiKeyId'].OutputValue" `
     --output text
 
 if ($ApiKeyId) {
     Write-Host ""
     Write-Host "Your x-api-key value:" -ForegroundColor Cyan
-    aws apigateway get-api-key --api-key $ApiKeyId --include-value --region $Region --query "value" --output text
+    aws apigateway get-api-key --api-key $ApiKeyId --include-value --region $Region --profile $AwsProfile --query "value" --output text
 }
