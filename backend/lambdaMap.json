@@ -1,0 +1,9 @@
+// ["lambda-keyword","path-to-lambda.ts", "lambda-name"]
+
+[
+    ["createRecord", "src/lambdas/createRecord.ts", "createRecord"],
+    ["getRecords", "src/lambdas/getRecords.ts", "getRecord"],
+    ["createPatient", "src/lambdas/createPatient.ts", "createPatient"],
+    ["getPatient", "src/lambdas/getPatient.ts", "getPatient"],
+]
+

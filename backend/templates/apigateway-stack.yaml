@@ -1,0 +1,284 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Profiler — API Gateway REST API
+  Defines all routes and wires them to the Lambda functions deployed by lambda-stack.
+
+  NOTE: Import this file manually into AWS API Gateway console via:
+    API Gateway → Create API → REST API → Import → paste this file.
+  OR deploy this stack after lambda-stack to auto-create the API.
+
+Parameters:
+  Stage:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, prod]
+
+  AppName:
+    Type: String
+    Description: Application name prefix (APP_NAME from .env)
+
+  # Lambda ARNs cross-referenced from lambda-stack outputs
+  CreatePatientFunctionArn:
+    Type: String
+  GetPatientFunctionArn:
+    Type: String
+  GetRecordFunctionArn:
+    Type: String
+  CreateRecordFunctionArn:
+    Type: String
+
+Resources:
+  ProfilerRestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub "${AppName}-api-${Stage}"
+      Description: Profiler Healthcare Profile Service API
+      EndpointConfiguration:
+        Types: [REGIONAL]
+
+  # -------------------------------------------------------
+  # API Key + Usage Plan
+  # -------------------------------------------------------
+  ProfilerApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    DependsOn: ProfilerApiDeployment
+    Properties:
+      Name: !Sub "${AppName}-api-key"   # ← single key, no stage
+      Enabled: true
+
+  ProfilerUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    DependsOn: ProfilerApiDeployment
+    Properties:
+      UsagePlanName: !Sub "${AppName}-usage-plan-${Stage}"
+      ApiStages:
+        - ApiId: !Ref ProfilerRestApi
+          Stage: !Ref ProfilerApiStage
+
+  ProfilerUsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId: !Ref ProfilerApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref ProfilerUsagePlan
+
+  # -------------------------------------------------------
+  # Resources (paths)
+  # -------------------------------------------------------
+
+  # /patient
+  PatientResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ProfilerRestApi
+      ParentId: !GetAtt ProfilerRestApi.RootResourceId
+      PathPart: patient
+
+  # /patient/{shn}
+  PatientShnResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ProfilerRestApi
+      ParentId: !Ref PatientResource
+      PathPart: "{shn}"
+
+  # /patient/{shn}/records
+  RecordsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ProfilerRestApi
+      ParentId: !Ref PatientShnResource
+      PathPart: records
+
+  # -------------------------------------------------------
+  # POST /patient → createPatient Lambda
+  # -------------------------------------------------------
+  CreatePatientMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ProfilerRestApi
+      ResourceId: !Ref PatientResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      ApiKeyRequired: true
+      RequestValidatorId: !Ref BodyValidator
+      RequestModels:
+        application/json: !Ref CreatePatientRequestModel
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${Arn}/invocations"
+          - Arn: !Ref CreatePatientFunctionArn
+
+  CreatePatientLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CreatePatientFunctionArn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ProfilerRestApi}/*/POST/patient"
+
+  # -------------------------------------------------------
+  # GET /patient/{shn} → getPatient Lambda
+  # -------------------------------------------------------
+  GetPatientMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ProfilerRestApi
+      ResourceId: !Ref PatientShnResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      ApiKeyRequired: true
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${Arn}/invocations"
+          - Arn: !Ref GetPatientFunctionArn
+
+  GetPatientLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GetPatientFunctionArn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ProfilerRestApi}/*/GET/patient/{shn}"
+
+  # -------------------------------------------------------
+  # GET /patient/{shn}/records → getRecord Lambda
+  # -------------------------------------------------------
+  GetRecordsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ProfilerRestApi
+      ResourceId: !Ref RecordsResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      ApiKeyRequired: true
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${Arn}/invocations"
+          - Arn: !Ref GetRecordFunctionArn
+
+  GetRecordsLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GetRecordFunctionArn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ProfilerRestApi}/*/GET/patient/{shn}/records"
+
+  # -------------------------------------------------------
+  # POST /patient/{shn}/records → createRecord Lambda
+  # -------------------------------------------------------
+  CreateRecordMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ProfilerRestApi
+      ResourceId: !Ref RecordsResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      ApiKeyRequired: true
+      RequestValidatorId: !Ref BodyValidator
+      RequestModels:
+        application/json: !Ref CreateRecordRequestModel
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${Arn}/invocations"
+          - Arn: !Ref CreateRecordFunctionArn
+
+  CreateRecordLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CreateRecordFunctionArn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ProfilerRestApi}/*/POST/patient/{shn}/records"
+
+  # -------------------------------------------------------
+  # Deployment + Stage
+  # -------------------------------------------------------
+  ProfilerApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - CreatePatientMethod
+      - GetPatientMethod
+      - GetRecordsMethod
+      - CreateRecordMethod
+    Properties:
+      RestApiId: !Ref ProfilerRestApi
+
+  ProfilerApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref ProfilerRestApi
+      DeploymentId: !Ref ProfilerApiDeployment
+      StageName: !Ref Stage
+
+  # -------------------------------------------------------
+  # Request Body Validator
+  # Enforces schemas from openapi.yaml at the API Gateway level
+  # -------------------------------------------------------
+  BodyValidator:
+    Type: AWS::ApiGateway::RequestValidator
+    Properties:
+      RestApiId: !Ref ProfilerRestApi
+      Name: !Sub "${AppName}-body-validator"
+      ValidateRequestBody: true
+      ValidateRequestParameters: false
+
+  # Model: CreatePatientRequest — mirrors openapi.yaml CreatePatientRequest schema
+  CreatePatientRequestModel:
+    Type: AWS::ApiGateway::Model
+    Properties:
+      RestApiId: !Ref ProfilerRestApi
+      ContentType: application/json
+      Name: CreatePatientRequest
+      Schema:
+        type: object
+        required:
+          - name
+          - dateOfBirth
+          - email
+        properties:
+          name:
+            type: string
+          dateOfBirth:
+            type: string
+          email:
+            type: string
+          phone:
+            type: string
+
+  # Model: CreateRecordRequest — mirrors openapi.yaml CreateRecordRequest schema
+  CreateRecordRequestModel:
+    Type: AWS::ApiGateway::Model
+    Properties:
+      RestApiId: !Ref ProfilerRestApi
+      ContentType: application/json
+      Name: CreateRecordRequest
+      Schema:
+        type: object
+        required:
+          - title
+        properties:
+          title:
+            type: string
+          content:
+            type: string
+          filePath:
+            type: string
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway base URL
+    Value: !Sub "https://${ProfilerRestApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}"
+
+  ApiKeyId:
+    Description: API Key ID (retrieve value with: aws apigateway get-api-key --api-key <id> --include-value)
+    Value: !Ref ProfilerApiKey

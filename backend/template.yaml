@@ -1,0 +1,128 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+
+Description: Profiler Backend — Lambda functions for patient profiles and medical records
+
+Parameters:
+  RedisUrl:
+    Type: String
+    Description: >
+      Redis Cloud connection URL from your Redis Cloud dashboard.
+      Format: rediss://:<password>@<host>:<port>
+  Stage:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, prod]
+    Description: Deployment stage
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Architectures: [x86_64]
+    Timeout: 10
+    MemorySize: 256
+    Environment:
+      Variables:
+        PATIENT_TABLE: profiler-patientDB
+        RECORDS_TABLE: profiler-medicalrecordDB
+        REDIS_URL: !Ref RedisUrl
+
+Resources:
+  # --------------------------------------------------------------------------
+  # POST /patient
+  # --------------------------------------------------------------------------
+  CreatePatientFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub profiler-createPatient-${Stage}
+      Handler: createPatient.handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: profiler-patientDB
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Format: cjs
+        EntryPoints:
+          - src/lambdas/createPatient.ts
+
+  # --------------------------------------------------------------------------
+  # GET /patient/{shn}
+  # --------------------------------------------------------------------------
+  GetPatientFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub profiler-getPatient-${Stage}
+      Handler: getPatient.handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: profiler-patientDB
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Format: cjs
+        EntryPoints:
+          - src/lambdas/getPatient.ts
+
+  # --------------------------------------------------------------------------
+  # GET /patient/{shn}/records
+  # --------------------------------------------------------------------------
+  GetRecordsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub profiler-getRecords-${Stage}
+      Handler: getRecords.handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: profiler-medicalrecordDB
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Format: cjs
+        EntryPoints:
+          - src/lambdas/getRecords.ts
+
+  # --------------------------------------------------------------------------
+  # POST /patient/{shn}/records
+  # --------------------------------------------------------------------------
+  CreateRecordFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub profiler-createRecord-${Stage}
+      Handler: createRecord.handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: profiler-patientDB
+        - DynamoDBCrudPolicy:
+            TableName: profiler-medicalrecordDB
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Format: cjs
+        EntryPoints:
+          - src/lambdas/createRecord.ts
+
+Outputs:
+  CreatePatientFunctionArn:
+    Description: ARN for CreatePatient Lambda — link to POST /patient in API Gateway
+    Value: !GetAtt CreatePatientFunction.Arn
+
+  GetPatientFunctionArn:
+    Description: ARN for GetPatient Lambda — link to GET /patient/{shn} in API Gateway
+    Value: !GetAtt GetPatientFunction.Arn
+
+  GetRecordsFunctionArn:
+    Description: ARN for GetRecords Lambda — link to GET /patient/{shn}/records in API Gateway
+    Value: !GetAtt GetRecordsFunction.Arn
+
+  CreateRecordFunctionArn:
+    Description: ARN for CreateRecord Lambda — link to POST /patient/{shn}/records in API Gateway
+    Value: !GetAtt CreateRecordFunction.Arn

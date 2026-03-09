@@ -1,0 +1,157 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+
+Description: >
+  Profiler — Lambda Functions
+  Deploys all 4 handlers: createPatient, getPatient, getRecord, createRecord.
+  Function names follow the convention: {AppName}-{lambdaName}-{Stage}
+  Sources of truth: lambdaMap.json (names/paths), .env (AppName, table names, Redis)
+
+Parameters:
+  Stage:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, prod]
+
+  AppName:
+    Type: String
+    Description: Application name prefix (APP_NAME from .env)
+
+  RedisUrl:
+    Type: String
+    Description: >
+      Redis Cloud connection URL (from Redis Cloud dashboard → Connect → ioredis).
+      Format: rediss://:<password>@<host>:<port>
+    NoEcho: true
+
+  PatientTable:
+    Type: String
+    Description: DynamoDB patientDB table name (from dynamodb-stack outputs)
+
+  RecordsTable:
+    Type: String
+    Description: DynamoDB medicalrecordDB table name (from dynamodb-stack outputs)
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Architectures: [x86_64]
+    Timeout: 10
+    MemorySize: 256
+    Environment:
+      Variables:
+        PATIENT_TABLE: !Ref PatientTable
+        RECORDS_TABLE: !Ref RecordsTable
+        REDIS_URL: !Ref RedisUrl
+
+Resources:
+  # --------------------------------------------------------------------------
+  # POST /patient — createPatient
+  # lambdaMap.json: ["createPatient", "src/lambdas/createPatient.ts", "createPatient"]
+  # --------------------------------------------------------------------------
+  CreatePatientFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-createPatient-${Stage}"
+      Handler: createPatient.handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PatientTable
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Format: cjs
+        EntryPoints:
+          - src/lambdas/createPatient.ts
+
+  # --------------------------------------------------------------------------
+  # GET /patient/{shn} — getPatient  (Redis cache-first)
+  # lambdaMap.json: ["getPatient", "src/lambdas/getPatient.ts", "getPatient"]
+  # --------------------------------------------------------------------------
+  GetPatientFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-getPatient-${Stage}"
+      Handler: getPatient.handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref PatientTable
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Format: cjs
+        EntryPoints:
+          - src/lambdas/getPatient.ts
+
+  # --------------------------------------------------------------------------
+  # GET /patient/{shn}/records — getRecord  (queries via shn-index GSI)
+  # lambdaMap.json: ["getRecord", "src/lambdas/getRecord.ts", "getRecord"]
+  # --------------------------------------------------------------------------
+  GetRecordFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-getRecord-${Stage}"
+      Handler: getRecords.handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref RecordsTable
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Format: cjs
+        EntryPoints:
+          - src/lambdas/getRecords.ts
+
+  # --------------------------------------------------------------------------
+  # POST /patient/{shn}/records — createRecord  (invalidates Redis cache)
+  # lambdaMap.json: ["createRecord", "src/lambdas/createRecord.ts", "createRecord"]
+  # --------------------------------------------------------------------------
+  CreateRecordFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-createRecord-${Stage}"
+      Handler: createRecord.handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref PatientTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RecordsTable
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Format: cjs
+        EntryPoints:
+          - src/lambdas/createRecord.ts
+
+Outputs:
+  CreatePatientFunctionArn:
+    Description: "ARN — link to POST /patient in API Gateway"
+    Value: !GetAtt CreatePatientFunction.Arn
+    Export:
+      Name: !Sub "${AppName}-CreatePatientFunctionArn-${Stage}"
+
+  GetPatientFunctionArn:
+    Description: "ARN — link to GET /patient/{shn} in API Gateway"
+    Value: !GetAtt GetPatientFunction.Arn
+    Export:
+      Name: !Sub "${AppName}-GetPatientFunctionArn-${Stage}"
+
+  GetRecordFunctionArn:
+    Description: "ARN — link to GET /patient/{shn}/records in API Gateway"
+    Value: !GetAtt GetRecordFunction.Arn
+    Export:
+      Name: !Sub "${AppName}-GetRecordFunctionArn-${Stage}"
+
+  CreateRecordFunctionArn:
+    Description: "ARN — link to POST /patient/{shn}/records in API Gateway"
+    Value: !GetAtt CreateRecordFunction.Arn
+    Export:
+      Name: !Sub "${AppName}-CreateRecordFunctionArn-${Stage}"

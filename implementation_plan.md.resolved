@@ -1,0 +1,75 @@
+# Patient Profile Keeper - Implementation Plan
+
+## Goal Description
+Build "Profiler", a cloud-native patient profile management system where patients own their data and grant temporary, revocable access to doctors. This project stricly follows the [PROJECT.md](file:///C:/Users/anton/.gemini/antigravity/brain/c47db40e-1ee7-4a0a-b7be-237f6f0b437d/PROJECT.md) design file.
+
+## User Review Required
+> [!IMPORTANT]
+> The project structure overrides previous monorepo plans. We strictly follow `frontend/` and `backend/` separation.
+> - `backend/storage`: Contains both KV and DynamoDB adapters.
+> - `backend/lambda`: Contains distinct handlers for each endpoint.
+> - `backend/cdk`: Infrastructure definition.
+
+## Proposed Changes
+
+### Phase 1: API & Domain (Focus: `backend/`)
+- **Structure Setup**:
+    - Ensure `backend/` has `lambda`, `storage`, `scripts`, and `cdk` directories.
+    - `scripts/` will contain deployment and utility scripts (e.g., CDK deploy wrappers).
+    - Initialize `package.json` in `backend` for shared types/deps (or separate if implied by "Separation of Concerns", but TS types likely shared or duplicated). *Decision: Shared types in `backend/types` or similar to be imported.*
+- **Domain Modeling**:
+    - `Patient`, `Doctor`, `AccessRecord` interfaces.
+    - Zod schemas for `POST /patient`, `POST /access/grant`.
+- **API Contracts**:
+    - Define TypeScript interfaces for `StorageAdapter`.
+
+### Phase 2: Mini KV Store (Focus: `backend/storage`)
+- **Implementation**:
+    - `KVStoreAdapter` implementing `StorageAdapter`.
+    - File-based append-only log logic (Node.js `fs`).
+    - Recovery logic (replay log on startup).
+
+### Phase 3: Lambda + API Gateway (Focus: `backend/lambda`)
+- **Handlers**:
+    - `createPatient.ts`
+    - `getPatient.ts`
+    - `grantAccess.ts`
+    - `revokeAccess.ts`
+    - `getRecords.ts`
+- **Logic**:
+    - Integrate `Zod` validation.
+    - Connect to `StorageAdapter` (defaulting to `KVStoreAdapter` locally).
+
+### Phase 4: DynamoDB (Focus: `backend/storage`)
+- **Implementation**:
+    - `DynamoDBAdapter` implementing `StorageAdapter`.
+    - **Multi-Table Design**:
+        - `Patients` table (PK: SHN, SK: record type)
+        - `MedicalRecords` table (PK: RecordId, GSI on SHN)
+- **Configuration**:
+    - Env var `STORAGE_MODE=DYNAMODB | KV`.
+
+### Phase 5: Frontend (Focus: `frontend/`)
+- **Setup**:
+    - Clean Next.js (latest) install.
+- **Features**:
+    - Patient View: Profile creation form, Display SHN.
+    - Doctor View: Input SHN, view read-only data.
+
+### Phase 6: CDK & Deployment (Focus: `backend/cdk`)
+- **Stacks**:
+    - `StorageStack`: DynamoDB tables (Patients + MedicalRecords) + TTL + GSI.
+    - `ApiStack`: Lambdas + API Gateway.
+    - `PipelineStack`: Deployment pipeline.
+
+## Verification Plan
+### Automated Tests
+- Unit tests for `KVStoreAdapter` (persistence checks).
+- Unit tests for `AccessControl` logic (expiration, revocation).
+- Local Lambda invocation testing.
+
+### Manual Verification
+- **Phase 1**: Review TS interfaces.
+- **Phase 2**: Inspect local file creation for KV store.
+- **Phase 3**: Curl requests to local Lambda wrappers.
+- **Phase 4**: AWS Console checks for DynamoDB items.

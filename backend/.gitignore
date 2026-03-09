@@ -1,0 +1,12 @@
+# Environment secrets — never commit
+.env
+
+# Build outputs
+dist/
+.aws-sam/
+
+# Dependencies
+node_modules/
+
+# SAM config (contains bucket names — optional to ignore, but safe to)
+samconfig.toml

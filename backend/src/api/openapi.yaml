@@ -1,0 +1,324 @@
+openapi: 3.0.3
+info:
+  title: Profiler API
+  description: Healthcare profile service — patient profiles and medical records.
+  version: 2.0.0
+
+servers:
+  - url: https://api.profiler.internal
+    description: API Gateway
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+  # ============================================================================
+  # Patient
+  # ============================================================================
+
+  /patient:
+    post:
+      summary: Create a new patient profile
+      description: >
+        Generates a unique SHN, writes the patient record to patientDB (DynamoDB),
+        and returns the created profile.
+      operationId: createPatient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePatientRequest"
+      responses:
+        "201":
+          description: Patient created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatePatientResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /patient/{shn}:
+    get:
+      summary: Get patient profile
+      description: >
+        Returns the patient profile from patientDB. Checks Redis cache first
+        (key: patient:<shn>, TTL 300s); falls back to DynamoDB on cache miss.
+        Intended for use by doctors.
+      operationId: getPatient
+      parameters:
+        - $ref: "#/components/parameters/SHNPathParam"
+      responses:
+        "200":
+          description: Patient profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetPatientResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ============================================================================
+  # Medical Records
+  # ============================================================================
+
+  /patient/{shn}/records:
+    get:
+      summary: List all medical records for a patient
+      description: >
+        Queries medicalrecordDB via the SHN GSI and returns all records
+        belonging to the patient. Intended for use by patients.
+      operationId: getRecords
+      parameters:
+        - $ref: "#/components/parameters/SHNPathParam"
+      responses:
+        "200":
+          description: Medical records retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetRecordsResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    post:
+      summary: Create a medical record for a patient
+      description: >
+        Writes a new record to medicalrecordDB (PK: recordId, GSI: shn).
+        Invalidates the Redis cache for this SHN after writing.
+        Intended for use by patients.
+      operationId: createRecord
+      parameters:
+        - $ref: "#/components/parameters/SHNPathParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRecordRequest"
+      responses:
+        "201":
+          description: Medical record created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateRecordResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+
+  parameters:
+    SHNPathParam:
+      name: shn
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^SHN-[A-Z0-9]{10}$"
+      description: Social Healthcare Number (e.g. SHN-ABC1234567)
+
+  schemas:
+    # --------------------------------------------------------------------------
+    # Core Models  (mirrors models.ts)
+    # --------------------------------------------------------------------------
+
+    # Patient — patientDB table, PK: shn
+    Patient:
+      type: object
+      properties:
+        shn:
+          type: string
+          pattern: "^SHN-[A-Z0-9]{10}$"
+          example: "SHN-ABC1234567"
+        name:
+          type: string
+          example: "John Doe"
+        dateOfBirth:
+          type: string
+          format: date
+          example: "1990-05-15"
+        contact:
+          type: object
+          properties:
+            email:
+              type: string
+              format: email
+              example: "john.doe@example.com"
+            phone:
+              type: string
+              example: "+1-555-0100"
+          required:
+            - email
+      required:
+        - shn
+        - name
+        - dateOfBirth
+        - contact
+
+    # MedicalRecord — medicalrecordDB table, PK: recordId, GSI: shn
+    MedicalRecord:
+      type: object
+      properties:
+        recordId:
+          type: string
+          example: "rec-ABCD123456"
+        shn:
+          type: string
+          pattern: "^SHN-[A-Z0-9]{10}$"
+          example: "SHN-ABC1234567"
+        title:
+          type: string
+          example: "Blood Test Results"
+        content:
+          type: string
+          description: Text content of the record (optional)
+          example: "Hemoglobin: 14.2 g/dL"
+        filePath:
+          type: string
+          description: S3 path for file-based records (optional)
+          example: "records/SHN-ABC1234567/rec-ABCD123456.pdf"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-03-09T10:30:00Z"
+      required:
+        - recordId
+        - shn
+        - title
+        - createdAt
+
+    # --------------------------------------------------------------------------
+    # Request / Response Models  (mirrors schemas.ts)
+    # --------------------------------------------------------------------------
+
+    # POST /patient — body: CreatePatientSchema
+    CreatePatientRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          example: "John Doe"
+        dateOfBirth:
+          type: string
+          format: date
+          example: "1990-05-15"
+        email:
+          type: string
+          format: email
+          example: "john.doe@example.com"
+        phone:
+          type: string
+          example: "+1-555-0100"
+      required:
+        - name
+        - dateOfBirth
+        - email
+
+    CreatePatientResponse:
+      type: object
+      properties:
+        shn:
+          type: string
+          example: "SHN-ABC1234567"
+        patient:
+          $ref: "#/components/schemas/Patient"
+      required:
+        - shn
+        - patient
+
+    # GET /patient/{shn}
+    GetPatientResponse:
+      type: object
+      properties:
+        patient:
+          $ref: "#/components/schemas/Patient"
+      required:
+        - patient
+
+    # POST /patient/{shn}/records — body: CreateMedicalRecordSchema
+    CreateRecordRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          example: "Blood Test Results"
+        content:
+          type: string
+          example: "Hemoglobin: 14.2 g/dL"
+        filePath:
+          type: string
+          example: "records/SHN-ABC1234567/rec-ABCD123456.pdf"
+      required:
+        - title
+
+    CreateRecordResponse:
+      type: object
+      properties:
+        record:
+          $ref: "#/components/schemas/MedicalRecord"
+      required:
+        - record
+
+    # GET /patient/{shn}/records
+    GetRecordsResponse:
+      type: object
+      properties:
+        shn:
+          type: string
+          example: "SHN-ABC1234567"
+        records:
+          type: array
+          items:
+            $ref: "#/components/schemas/MedicalRecord"
+      required:
+        - shn
+        - records
+
+  responses:
+    BadRequest:
+      description: Bad Request (Validation Error)
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: "Name is required"
+    NotFound:
+      description: Resource Not Found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: "Patient not found"
+    InternalError:
+      description: Internal Server Error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: "Internal server error"

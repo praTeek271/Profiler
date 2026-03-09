@@ -1,0 +1,70 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Profiler — DynamoDB Tables
+  Creates patientDB and medicalrecordDB with required keys and GSI.
+  Table names follow convention: {AppName}-patientDB-{Stage}
+
+Parameters:
+  Stage:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, prod]
+  AppName:
+    Type: String
+    Description: Application name prefix (APP_NAME from .env)
+
+Resources:
+  # -------------------------------------------------------
+  # patientDB
+  # PK: shn (String)
+  # -------------------------------------------------------
+  PatientTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AppName}-patientDB-${Stage}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: shn
+          AttributeType: S
+      KeySchema:
+        - AttributeName: shn
+          KeyType: HASH
+
+  # -------------------------------------------------------
+  # medicalrecordDB
+  # PK: recordId (String)
+  # GSI: shn-index on shn (for per-patient queries)
+  # -------------------------------------------------------
+  MedicalRecordTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AppName}-medicalrecordDB-${Stage}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: recordId
+          AttributeType: S
+        - AttributeName: shn
+          AttributeType: S
+      KeySchema:
+        - AttributeName: recordId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: shn-index
+          KeySchema:
+            - AttributeName: shn
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+Outputs:
+  PatientTableName:
+    Description: patientDB table name
+    Value: !Ref PatientTable
+    Export:
+      Name: !Sub "${AppName}-PatientTableName-${Stage}"
+
+  MedicalRecordTableName:
+    Description: medicalrecordDB table name
+    Value: !Ref MedicalRecordTable
+    Export:
+      Name: !Sub "${AppName}-MedicalRecordTableName-${Stage}"
